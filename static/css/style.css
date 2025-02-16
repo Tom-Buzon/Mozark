@@ -1,0 +1,282 @@
+/* Global */
+body {
+    font-family: Arial, sans-serif;
+    background-color: #fdf8f3;
+    color: #333;
+    margin: 0;
+    padding: 0;
+  }
+  
+  header {
+    background-color: #a66f4e;
+    color: white;
+    padding: 1em;
+    text-align: center;
+  }
+  
+  nav ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  
+  nav ul li {
+    display: inline-block;
+    margin: 0 1em;
+  }
+  
+  nav ul li a {
+    color: white;
+    text-decoration: none;
+    font-weight: bold;
+  }
+  
+  main {
+    padding: 2em;
+  }
+  
+  /* Conteneur principal en deux colonnes */
+  #main-content {
+    display: flex;
+    gap: 2em;
+  }
+  
+  /* Colonne pour la mosaïque */
+  #mosaic-column {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  
+  /* Colonne pour les réglages */
+  #settings-column {
+    flex: 1;
+  }
+  
+  /* Formulaire */
+  .form-group {
+    margin-bottom: 1em;
+  }
+  
+  label {
+    display: block;
+    margin-bottom: 0.5em;
+  }
+  
+  input[type="file"],
+  input[type="range"] {
+    width: 100%;
+    padding: 0.5em;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+  }
+  
+  /* Container de la mosaïque (carré) */
+  #mosaic-container {
+    position: relative;
+    width: 800px;
+    height: 800px;
+    border: 5px solid #a66f4e;
+    overflow: hidden;
+    background: #fdf8f3;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  
+  /* Wrapper pour la mosaïque : centré */
+  #mosaic-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+    transform-origin: center center;
+    transition: transform 0.3s ease;
+  }
+  
+  #mosaicImage {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  
+  /* Affichage de la résolution */
+  #mosaicResolution {
+    position: absolute;
+    bottom: 5px;
+    right: 5px;
+    background: rgba(255,255,255,0.7);
+    padding: 3px 6px;
+    font-size: 0.9em;
+    border-radius: 4px;
+  }
+  
+  /* Zoom controls */
+  #zoom-controls {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 10;
+  }
+  
+  .zoom-btn {
+    background-color: #a66f4e;
+    color: white;
+    border: none;
+    padding: 0.5em;
+    margin: 0 0.2em;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  
+  /* Footer */
+  footer {
+    text-align: center;
+    padding: 1em;
+    background-color: #a66f4e;
+    color: white;
+    position: fixed;
+    width: 100%;
+    bottom: 0;
+  }
+  
+  /* Loader overlay (placé dans le container) */
+  #loader {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255,255,255,0.9);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-evenly;
+    align-items: center;
+    z-index: 20;
+  }
+  
+  /* Loader animation from Uiverse.io by Praashoo7 */
+  .main {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .loaders,
+  .loadersB {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .loader {
+    position: absolute;
+    width: 1.15em;
+    height: 13em;
+    border-radius: 50px;
+    background: #e0e0e0;
+  }
+  .loader:after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1.15em;
+    height: 5em;
+    background: #e0e0e0;
+    border-radius: 50px;
+    border: 1px solid #e2e2e2;
+    box-shadow: inset 5px 5px 15px rgba(211,210,210,0.67),
+                inset -5px -5px 15px rgba(233,233,233,0.67);
+    mask-image: linear-gradient(to bottom, black calc(100% - 48px), transparent 100%);
+  }
+  .loader::before {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 1.15em;
+    height: 4.5em;
+    background: #e0e0e0;
+    border-radius: 50px;
+    border: 1px solid #e2e2e2;
+    box-shadow: inset 5px 5px 15px rgba(211,210,210,0.67),
+                inset -5px -5px 15px rgba(233,233,233,0.67);
+    mask-image: linear-gradient(to top, black calc(100% - 48px), transparent 100%);
+  }
+  .loaderA {
+    position: absolute;
+    width: 1.15em;
+    height: 13em;
+    border-radius: 50px;
+    background: transparent;
+  }
+  .ball0,
+  .ball1,
+  .ball2,
+  .ball3,
+  .ball4,
+  .ball5,
+  .ball6,
+  .ball7,
+  .ball8,
+  .ball9 {
+    width: 1.15em;
+    height: 1.15em;
+    box-shadow: rgba(0,0,0,0.17) 0px -10px 10px 0px inset,
+                rgba(0,0,0,0.15) 0px -15px 15px 0px inset,
+                rgba(0,0,0,0.1) 0px -40px 20px 0px inset,
+                rgba(0,0,0,0.06) 0px 2px 1px,
+                rgba(0,0,0,0.09) 0px 4px 2px,
+                rgba(0,0,0,0.09) 0px 8px 4px,
+                rgba(0,0,0,0.09) 0px 16px 8px,
+                rgba(0,0,0,0.09) 0px 32px 16px,
+                0px -1px 15px -8px rgba(0,0,0,0.09);
+    border-radius: 50%;
+    transition: transform 800ms cubic-bezier(1, -0.4, 0, 1.4);
+    background-color: rgba(232,232,232,1);
+    animation: 3.63s move ease-in-out infinite;
+  }
+  .loader:nth-child(2) { transform: rotate(20deg); }
+  .loader:nth-child(3) { transform: rotate(40deg); }
+  .loader:nth-child(4) { transform: rotate(60deg); }
+  .loader:nth-child(5) { transform: rotate(80deg); }
+  .loader:nth-child(6) { transform: rotate(100deg); }
+  .loader:nth-child(7) { transform: rotate(120deg); }
+  .loader:nth-child(8) { transform: rotate(140deg); }
+  .loader:nth-child(9) { transform: rotate(160deg); }
+  
+  .loaderA:nth-child(2) { transform: rotate(20deg); }
+  .loaderA:nth-child(3) { transform: rotate(40deg); }
+  .loaderA:nth-child(4) { transform: rotate(60deg); }
+  .loaderA:nth-child(5) { transform: rotate(80deg); }
+  .loaderA:nth-child(6) { transform: rotate(100deg); }
+  .loaderA:nth-child(7) { transform: rotate(120deg); }
+  .loaderA:nth-child(8) { transform: rotate(140deg); }
+  .loaderA:nth-child(9) { transform: rotate(160deg); }
+  
+  .ball1 { animation-delay: 0.2s; }
+  .ball2 { animation-delay: 0.4s; }
+  .ball3 { animation-delay: 0.6s; }
+  .ball4 { animation-delay: 0.8s; }
+  .ball5 { animation-delay: 1s; }
+  .ball6 { animation-delay: 1.2s; }
+  .ball7 { animation-delay: 1.4s; }
+  .ball8 { animation-delay: 1.6s; }
+  
+  @keyframes move {
+    0% { transform: translateY(0em); }
+    50% { transform: translateY(12em); }
+    100% { transform: translateY(0em); }
+  }
+  
+  /* Pour le texte du loader (logMessages) : placer le texte en dessous */
+  #logMessages {
+    margin-top: 1em;
+    text-align: center;
+    font-size: 1em;
+    color: #555;
+  }
+  

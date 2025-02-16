@@ -1,0 +1,41 @@
+<!-- templates/collection.html -->
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>The Mozark - Collection Saison 0</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <header>
+        <h1>The Mozark</h1>
+        <nav>
+            <ul>
+                <li><a href="{{ url_for('index') }}">Création</a></li>
+                <li><a href="{{ url_for('collection') }}">Collection Saison 0</a></li>
+            </ul>
+        </nav>
+    </header>
+    
+    <main>
+        <section id="collection">
+            <h2>Collection Saison 0</h2>
+            <p>
+                Chaque pièce de la collection (100 au total) est imprimée uniquement 10 fois, selon la demande.
+                L'œuvre – recréée en mosaïque à partir de 100 œuvres utilisées comme tuiles – incarne l'idée que
+                chacune des œuvres est à la fois une partie du tout et un reflet de la subjectivité.
+            </p>
+            <p>
+                Le support choisi (cadre, vêtement, mug, etc.) fait partie intégrante de l’œuvre, conférant ainsi
+                une unicité à chaque édition. Inspirée du monde digital avec une nostalgie de l’enfance, cette collection
+                prélaunch reflète la vision singulière de l’artiste.
+            </p>
+            <a href="https://www.etsy.com" target="_blank" class="btn">Voir sur Etsy</a>
+        </section>
+    </main>
+    
+    <footer>
+        <p>&copy; The Mozark</p>
+    </footer>
+</body>
+</html>

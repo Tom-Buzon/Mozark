@@ -1,0 +1,884 @@
+SOMMAIRE DE L'ANALYSE
+=====================
+└─ [D] WebApp
+├─ [F] app.py
+├─ [D] static
+    ├─ [D] css
+        └─ [F] style.css
+    └─ [D] js
+    │   └─ [F] main.js
+└─ [D] templates
+│   ├─ [F] collection.html
+│   └─ [F] index.html
+
+
+CONTENU DES FICHIERS
+====================
+
+============================================================
+Fichier : app.py
+Chemin  : C:\Users\suean\OneDrive\Desktop\tom\autoInsta\WebApp\app.py
+============================================================
+# app.py
+import io
+import math
+import base64
+import numpy as np
+from PIL import Image, ImageEnhance
+from flask import Flask, render_template, request, jsonify
+
+# Désactiver la limite de pixels pour éviter l'erreur de "decompression bomb"
+Image.MAX_IMAGE_PIXELS = None
+
+app = Flask(__name__)
+
+# --- Fonctions de traitement image ---
+
+def limit_image_definition(image, max_def):
+    """Redimensionne l'image si sa largeur ou hauteur dépasse max_def, en conservant le ratio."""
+    if image.width > max_def or image.height > max_def:
+        ratio = min(max_def / image.width, max_def / image.height)
+        new_size = (int(image.width * ratio), int(image.height * ratio))
+        return image.resize(new_size, Image.LANCZOS)
+    return image
+
+def upscale_image(image, scale_factor):
+    new_size = (int(image.width * scale_factor), int(image.height * scale_factor))
+    return image.resize(new_size, Image.LANCZOS)
+
+def calculate_color_stats(image):
+    img_array = np.array(image)
+    avg_color = img_array.mean(axis=(0, 1))
+    return avg_color, img_array.std(axis=(0, 1))
+
+def load_tiles_from_files(files, tile_size, max_mosaic_def):
+    """
+    Charge les images de tuiles depuis les fichiers uploadés, en les limitant à max_mosaic_def,
+    puis en les redimensionnant à la taille de tuile souhaitée.
+    Chaque tuile reçoit un compteur 'usage' initialisé à 0.
+    """
+    tiles = []
+    for f in files:
+        try:
+            img = Image.open(f.stream).convert('RGB')
+            # Limiter la taille de la tuile (pour que les images soient cohérentes)
+            img = limit_image_definition(img, max_mosaic_def)
+            img = img.resize((tile_size, tile_size), Image.LANCZOS)
+            avg_color, _ = calculate_color_stats(img)
+            tile = {"image": img, "avg_color": avg_color, "usage": 0}
+            tiles.append(tile)
+        except Exception as e:
+            print(f"Erreur lors du chargement d'une tuile: {e}")
+    return tiles
+
+def create_mosaic(main_image, tiles, tile_size, min_usage):
+    """
+    Crée la mosaïque de manière séquentielle.
+    Pour chaque bloc de l'image principale, on choisit la tuile dont la couleur moyenne est la plus proche.
+    Pour favoriser l'utilisation des tuiles non encore utilisées, on applique un bonus sur la distance
+    calculée en fonction de min_usage.
+    """
+    mosaic_width = (main_image.width // tile_size) * tile_size
+    mosaic_height = (main_image.height // tile_size) * tile_size
+    mosaic_image = Image.new('RGB', (mosaic_width, mosaic_height))
+    
+    bonus = (min_usage / 100.0) * 0.3  # ex: pour 100% → bonus = 0.3, pour 90% → bonus = 0.27
+    
+    for y in range(0, mosaic_height, tile_size):
+        for x in range(0, mosaic_width, tile_size):
+            block = main_image.crop((x, y, x + tile_size, y + tile_size))
+            block_avg, _ = calculate_color_stats(block)
+            best_tile = None
+            best_eff_distance = float('inf')
+            for tile in tiles:
+                distance = np.linalg.norm(tile["avg_color"] - block_avg)
+                if tile["usage"] == 0:
+                    effective_distance = distance * (1 - bonus)
+                else:
+                    effective_distance = distance
+                if effective_distance < best_eff_distance:
+                    best_eff_distance = effective_distance
+                    best_tile = tile
+            best_tile["usage"] += 1
+            mosaic_image.paste(best_tile["image"], (x, y))
+    return mosaic_image
+
+# --- Routes Flask ---
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/collection')
+def collection():
+    return render_template('collection.html')
+
+@app.route('/generate', methods=['POST'])
+def generate():
+    try:
+        main_file = request.files.get('main_image')
+        tile_files = request.files.getlist('tile_images')
+        
+        # Récupération des paramètres
+        tile_size = int(request.form.get('tile_size', 150))
+        main_visibility = float(request.form.get('main_visibility', 0.2))
+        final_scale = float(request.form.get('final_scale', 0.5))
+        min_usage = float(request.form.get('min_usage', 90))  # % d'utilisation minimale
+        max_mosaic_def = int(request.form.get('max_mosaic_definition', 1024))
+        
+        if not main_file or len(tile_files) == 0:
+            return jsonify({'error': 'Images manquantes'}), 400
+        
+        # Traitement de l'image principale
+        main_image = Image.open(main_file.stream).convert('RGB')
+        # On upscale pour obtenir des détails fins
+        upscale_factor = 15
+        main_image = upscale_image(main_image, upscale_factor)
+        
+        # Chargement des tuiles (limitées par max_mosaic_def)
+        tiles = load_tiles_from_files(tile_files, tile_size, max_mosaic_def)
+        if len(tiles) == 0:
+            return jsonify({'error': 'Aucune image de tuile valide'}), 400
+        
+        # Création de la mosaïque
+        mosaic = create_mosaic(main_image, tiles, tile_size, min_usage)
+        
+        # Limiter la résolution finale de la mosaïque selon le paramètre max_mosaic_definition
+        mosaic = limit_image_definition(mosaic, max_mosaic_def)
+        
+        # Application du blend avec l'image principale si demandé
+        if main_visibility > 0:
+            main_resized = main_image.resize(mosaic.size, Image.LANCZOS)
+            mosaic = Image.blend(mosaic, main_resized, main_visibility)
+        
+        # Redimensionnement final (scale)
+        if final_scale != 1.0:
+            final_size = (int(mosaic.width * final_scale), int(mosaic.height * final_scale))
+            mosaic = mosaic.resize(final_size, Image.LANCZOS)
+        
+        # Encodage en base64 pour renvoyer l'image
+        img_io = io.BytesIO()
+        mosaic.save(img_io, 'JPEG', quality=95)
+        img_io.seek(0)
+        base64_img = base64.b64encode(img_io.getvalue()).decode('utf-8')
+        return jsonify({'image': base64_img})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+============================================================
+
+
+============================================================
+Fichier : style.css
+Chemin  : C:\Users\suean\OneDrive\Desktop\tom\autoInsta\WebApp\static\css\style.css
+============================================================
+/* Global */
+body {
+    font-family: Arial, sans-serif;
+    background-color: #fdf8f3;
+    color: #333;
+    margin: 0;
+    padding: 0;
+  }
+  
+  header {
+    background-color: #a66f4e;
+    color: white;
+    padding: 1em;
+    text-align: center;
+  }
+  
+  nav ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  
+  nav ul li {
+    display: inline-block;
+    margin: 0 1em;
+  }
+  
+  nav ul li a {
+    color: white;
+    text-decoration: none;
+    font-weight: bold;
+  }
+  
+  main {
+    padding: 2em;
+  }
+  
+  /* Conteneur principal en deux colonnes */
+  #main-content {
+    display: flex;
+    gap: 2em;
+  }
+  
+  /* Colonne pour la mosaïque */
+  #mosaic-column {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  
+  /* Colonne pour les réglages */
+  #settings-column {
+    flex: 1;
+  }
+  
+  /* Formulaire */
+  .form-group {
+    margin-bottom: 1em;
+  }
+  
+  label {
+    display: block;
+    margin-bottom: 0.5em;
+  }
+  
+  input[type="file"],
+  input[type="range"] {
+    width: 100%;
+    padding: 0.5em;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+  }
+  
+  /* Container de la mosaïque (carré) */
+  #mosaic-container {
+    position: relative;
+    width: 800px;
+    height: 800px;
+    border: 5px solid #a66f4e;
+    overflow: hidden;
+    background: #fdf8f3;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  
+  /* Wrapper pour la mosaïque : centré */
+  #mosaic-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+    transform-origin: center center;
+    transition: transform 0.3s ease;
+  }
+  
+  #mosaicImage {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  
+  /* Affichage de la résolution */
+  #mosaicResolution {
+    position: absolute;
+    bottom: 5px;
+    right: 5px;
+    background: rgba(255, 255, 255, 0.7);
+    padding: 3px 6px;
+    font-size: 0.9em;
+    border-radius: 4px;
+  }
+  
+  /* Zoom controls */
+  #zoom-controls {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 10;
+  }
+  
+  .zoom-btn {
+    background-color: #a66f4e;
+    color: white;
+    border: none;
+    padding: 0.5em;
+    margin: 0 0.2em;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  
+  /* Footer */
+  footer {
+    text-align: center;
+    padding: 1em;
+    background-color: #a66f4e;
+    color: white;
+    position: fixed;
+    width: 100%;
+    bottom: 0;
+  }
+  
+  /* Loader overlay (placé dans le container) */
+  #loader {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255,255,255,0.9);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 20;
+  }
+  
+  /* Loader minimal from Uiverse.io by Nawsome */
+  .pl {
+    box-shadow: 2em 0 2em rgba(0, 0, 0, 0.2) inset, -2em 0 2em rgba(255, 255, 255, 0.1) inset;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    transform: rotateX(30deg) rotateZ(45deg);
+    width: 14em;
+    height: 14em;
+    color: white;
+  }
+  
+  .pl, .pl__dot {
+    border-radius: 50%;
+  }
+  
+  .pl__dot {
+    animation-name: shadow724;
+    box-shadow: 0.1em 0.1em 0 0.1em black, 0.3em 0 0.3em rgba(0, 0, 0, 0.5);
+    top: calc(50% - 0.75em);
+    left: calc(50% - 0.75em);
+    width: 1.5em;
+    height: 1.5em;
+  }
+  
+  .pl__dot, .pl__dot:before, .pl__dot:after {
+    animation-duration: 2s;
+    animation-iteration-count: infinite;
+    position: absolute;
+  }
+  
+  .pl__dot:before, .pl__dot:after {
+    content: "";
+    display: block;
+    left: 0;
+    width: inherit;
+    transition: background-color var(--trans-dur);
+  }
+  
+  .pl__dot:before {
+    animation-name: pushInOut1724;
+    background-color: var(--bg);
+    border-radius: inherit;
+    box-shadow: 0.05em 0 0.1em transparent inset;
+    height: inherit;
+    z-index: 1;
+  }
+  
+  .pl__dot:after {
+    animation-name: pushInOut2724;
+    background-color: var(--primary1);
+    border-radius: 0.75em;
+    box-shadow: 0.1em 0.3em 0.2em transparent inset, 0 -0.4em 0.2em transparent inset, 0 -1em 0.25em rgba(0, 0, 0, 0.3) inset;
+    bottom: 0;
+    clip-path: polygon(0 75%, 100% 75%, 100% 100%, 0 100%);
+    height: 3em;
+    transform: rotate(-45deg);
+    transform-origin: 50% 2.25em;
+  }
+  
+  .pl__dot:nth-child(1) {
+    transform: rotate(0deg) translateX(5em) rotate(0deg);
+    z-index: 5;
+  }
+  .pl__dot:nth-child(1), .pl__dot:nth-child(1):before, .pl__dot:nth-child(1):after {
+    animation-delay: 0s;
+  }
+  
+  .pl__dot:nth-child(2) {
+    transform: rotate(-30deg) translateX(5em) rotate(30deg);
+    z-index: 4;
+  }
+  .pl__dot:nth-child(2), .pl__dot:nth-child(2):before, .pl__dot:nth-child(2):after {
+    animation-delay: -0.1666666667s;
+  }
+  
+  .pl__dot:nth-child(3) {
+    transform: rotate(-60deg) translateX(5em) rotate(60deg);
+    z-index: 3;
+  }
+  .pl__dot:nth-child(3), .pl__dot:nth-child(3):before, .pl__dot:nth-child(3):after {
+    animation-delay: -0.3333333333s;
+  }
+  
+  .pl__dot:nth-child(4) {
+    transform: rotate(-90deg) translateX(5em) rotate(90deg);
+    z-index: 2;
+  }
+  .pl__dot:nth-child(4), .pl__dot:nth-child(4):before, .pl__dot:nth-child(4):after {
+    animation-delay: -0.5s;
+  }
+  
+  .pl__dot:nth-child(5) {
+    transform: rotate(-120deg) translateX(5em) rotate(120deg);
+    z-index: 1;
+  }
+  .pl__dot:nth-child(5), .pl__dot:nth-child(5):before, .pl__dot:nth-child(5):after {
+    animation-delay: -0.6666666667s;
+  }
+  
+  .pl__dot:nth-child(6) {
+    transform: rotate(-150deg) translateX(5em) rotate(150deg);
+    z-index: 1;
+  }
+  .pl__dot:nth-child(6), .pl__dot:nth-child(6):before, .pl__dot:nth-child(6):after {
+    animation-delay: -0.8333333333s;
+  }
+  
+  .pl__dot:nth-child(7) {
+    transform: rotate(-180deg) translateX(5em) rotate(180deg);
+    z-index: 2;
+  }
+  .pl__dot:nth-child(7), .pl__dot:nth-child(7):before, .pl__dot:nth-child(7):after {
+    animation-delay: -1s;
+  }
+  
+  .pl__dot:nth-child(8) {
+    transform: rotate(-210deg) translateX(5em) rotate(210deg);
+    z-index: 3;
+  }
+  .pl__dot:nth-child(8), .pl__dot:nth-child(8):before, .pl__dot:nth-child(8):after {
+    animation-delay: -1.1666666667s;
+  }
+  
+  .pl__dot:nth-child(9) {
+    transform: rotate(-240deg) translateX(5em) rotate(240deg);
+    z-index: 4;
+  }
+  .pl__dot:nth-child(9), .pl__dot:nth-child(9):before, .pl__dot:nth-child(9):after {
+    animation-delay: -1.3333333333s;
+  }
+  
+  .pl__dot:nth-child(10) {
+    transform: rotate(-270deg) translateX(5em) rotate(270deg);
+    z-index: 5;
+  }
+  .pl__dot:nth-child(10), .pl__dot:nth-child(10):before, .pl__dot:nth-child(10):after {
+    animation-delay: -1.5s;
+  }
+  
+  .pl__dot:nth-child(11) {
+    transform: rotate(-300deg) translateX(5em) rotate(300deg);
+    z-index: 6;
+  }
+  .pl__dot:nth-child(11), .pl__dot:nth-child(11):before, .pl__dot:nth-child(11):after {
+    animation-delay: -1.6666666667s;
+  }
+  
+  .pl__dot:nth-child(12) {
+    transform: rotate(-330deg) translateX(5em) rotate(330deg);
+    z-index: 6;
+  }
+  .pl__dot:nth-child(12), .pl__dot:nth-child(12):before, .pl__dot:nth-child(12):after {
+    animation-delay: -1.8333333333s;
+  }
+  
+  .pl__text {
+    font-size: 0.75em;
+    max-width: 5rem;
+    position: relative;
+    text-shadow: 0 0 0.1em rgba(0,0,0,0.5);
+    transform: rotateZ(-45deg);
+  }
+  
+  /* Animations */
+  @keyframes shadow724 {
+    from {
+      animation-timing-function: ease-in;
+      box-shadow: 0.1em 0.1em 0 0.1em #a66f4e, 0.3em 0 0.3em rgba(0, 0, 0, 0.3);
+    }
+    25% {
+      animation-timing-function: ease-out;
+      box-shadow: 0.1em 0.1em 0 0.1em black, 0.8em 0 0.8em rgba(0, 0, 0, 0.5);
+    }
+    50%, to {
+      box-shadow: 0.1em 0.1em 0 0.1em black, 0.3em 0 0.3em rgba(0, 0, 0, 0.3);
+    }
+  }
+  
+  @keyframes pushInOut1724 {
+    from {
+      animation-timing-function: ease-in;
+      background-color: #a66f4e;
+      transform: translate(0, 0);
+    }
+    25% {
+      animation-timing-function: ease-out;
+      background-color: var(--primary2);
+      transform: translate(-71%, -71%);
+    }
+    50%, to {
+      background-color: var(--bg);
+      transform: translate(0, 0);
+    }
+  }
+  
+  @keyframes pushInOut2724 {
+    from {
+      animation-timing-function: ease-in;
+      background-color: var(--bg);
+      clip-path: polygon(0 75%, 100% 75%, 100% 100%, 0 100%);
+    }
+    25% {
+      animation-timing-function: ease-out;
+      background-color: var(--primary1);
+      clip-path: polygon(0 0%, 100% 0%, 100% 100%, 0 100%);
+    }
+    50%, to {
+      background-color: var(--bg);
+      clip-path: polygon(0 75%, 100% 75%, 100% 100%, 0 100%);
+    }
+  }
+  
+============================================================
+
+
+============================================================
+Fichier : main.js
+Chemin  : C:\Users\suean\OneDrive\Desktop\tom\autoInsta\WebApp\static\js\main.js
+============================================================
+document.addEventListener('DOMContentLoaded', function(){
+    const mosaicForm = document.getElementById('mosaicForm');
+    const tileSizeSlider = document.getElementById('tile_size');
+    const tileSizeValue = document.getElementById('tile_size_value');
+    const mainVisibilitySlider = document.getElementById('main_visibility');
+    const mainVisibilityValue = document.getElementById('main_visibility_value');
+    const finalScaleSlider = document.getElementById('final_scale');
+    const finalScaleValue = document.getElementById('final_scale_value');
+    const maxMosaicDefSlider = document.getElementById('max_mosaic_definition');
+    const maxMosaicDefValue = document.getElementById('max_mosaic_definition_value');
+    const minUsageSlider = document.getElementById('min_usage');
+    const minUsageValue = document.getElementById('min_usage_value');
+  
+    const loadingDiv = document.getElementById('loader');
+    const logMessagesDiv = document.getElementById('logMessages');
+    const mosaicImage = document.getElementById('mosaicImage');
+  
+    const mosaicWrapper = document.getElementById('mosaic-wrapper');
+    const zoomInBtn = document.getElementById('zoom_in');
+    const zoomOutBtn = document.getElementById('zoom_out');
+    const fullscreenBtn = document.getElementById('fullscreen_btn');
+    const mosaicContainer = document.getElementById('mosaic-container');
+  
+    let currentZoom = 1.0;
+    const MIN_ZOOM = 0.05;
+  
+    let debounceTimer;
+    const DEBOUNCE_DELAY = 3000; // 3 secondes
+  
+    // Variables pour la simulation des logs
+    let logTimer;
+    const logMessages = [
+      "Préparation des images...",
+      "Calcul des couleurs moyennes...",
+      "Assemblage des tuiles...",
+      "Application des effets artistiques...",
+      "Finalisation de la mosaïque..."
+    ];
+    let logIndex = 0;
+  
+    function startLogUpdates() {
+      logMessagesDiv.textContent = logMessages[logIndex];
+      logTimer = setInterval(() => {
+        logIndex = (logIndex + 1) % logMessages.length;
+        logMessagesDiv.textContent = logMessages[logIndex];
+      }, 1000);
+    }
+  
+    function stopLogUpdates() {
+      clearInterval(logTimer);
+      logMessagesDiv.textContent = "";
+    }
+  
+    // Mise à jour des valeurs affichées et déclenchement du debounce
+    tileSizeSlider.addEventListener('input', () => {
+      tileSizeValue.textContent = tileSizeSlider.value;
+      debounceSubmit();
+    });
+    mainVisibilitySlider.addEventListener('input', () => {
+      mainVisibilityValue.textContent = mainVisibilitySlider.value;
+      debounceSubmit();
+    });
+    finalScaleSlider.addEventListener('input', () => {
+      finalScaleValue.textContent = finalScaleSlider.value;
+      debounceSubmit();
+    });
+    maxMosaicDefSlider.addEventListener('input', () => {
+      maxMosaicDefValue.textContent = maxMosaicDefSlider.value;
+      debounceSubmit();
+    });
+    minUsageSlider.addEventListener('input', () => {
+      minUsageValue.textContent = minUsageSlider.value;
+      debounceSubmit();
+    });
+  
+    document.getElementById('main_image').addEventListener('change', () => {
+      debounceSubmit(0);
+    });
+    document.getElementById('tile_images').addEventListener('change', () => {
+      debounceSubmit(0);
+    });
+  
+    function debounceSubmit(delay = DEBOUNCE_DELAY) {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        submitForm();
+      }, delay);
+    }
+  
+    function submitForm() {
+      loadingDiv.style.display = 'flex';
+      startLogUpdates();
+      const formData = new FormData(mosaicForm);
+      fetch('/generate', {
+        method: 'POST',
+        body: formData
+      })
+        .then(response => response.json())
+        .then(data => {
+          loadingDiv.style.display = 'none';
+          stopLogUpdates();
+          if (data.error) {
+            alert("Erreur : " + data.error);
+          } else {
+            mosaicImage.src = 'data:image/jpeg;base64,' + data.image;
+          }
+        })
+        .catch(error => {
+          loadingDiv.style.display = 'none';
+          stopLogUpdates();
+          alert("Erreur lors de la génération de la mosaïque.");
+          console.error(error);
+        });
+    }
+  
+    function updateZoom() {
+      mosaicWrapper.style.transform = `scale(${currentZoom})`;
+    }
+  
+    zoomInBtn.addEventListener('click', () => {
+      currentZoom += 0.03;
+      updateZoom();
+    });
+    zoomOutBtn.addEventListener('click', () => {
+      currentZoom = Math.max(MIN_ZOOM, currentZoom - 0.03);
+      updateZoom();
+    });
+  
+    mosaicWrapper.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      if (e.deltaY < 0) {
+        currentZoom += 0.03;
+      } else {
+        currentZoom = Math.max(MIN_ZOOM, currentZoom - 0.03);
+      }
+      updateZoom();
+    });
+  
+    mosaicImage.onload = function() {
+      const containerWidth = mosaicContainer.clientWidth;
+      const containerHeight = mosaicContainer.clientHeight;
+      const imageWidth = mosaicImage.naturalWidth;
+      const imageHeight = mosaicImage.naturalHeight;
+      const initialScale = Math.min(containerWidth / imageWidth, containerHeight / imageHeight);
+      currentZoom = initialScale;
+      updateZoom();
+      const resolutionDisplay = document.getElementById('mosaicResolution');
+      resolutionDisplay.textContent = `${imageWidth} x ${imageHeight}`;
+    };
+  
+    fullscreenBtn.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        mosaicContainer.requestFullscreen().catch(err => {
+          alert(`Erreur lors du passage en plein écran: ${err.message}`);
+        });
+      } else {
+        document.exitFullscreen();
+      }
+    });
+  
+    // Si des fichiers sont déjà sélectionnés, lancer la génération
+    if (document.getElementById('main_image').files.length > 0 && document.getElementById('tile_images').files.length > 0) {
+      submitForm();
+    }
+  });
+  
+============================================================
+
+
+============================================================
+Fichier : collection.html
+Chemin  : C:\Users\suean\OneDrive\Desktop\tom\autoInsta\WebApp\templates\collection.html
+============================================================
+<!-- templates/collection.html -->
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>The Mozark - Collection Saison 0</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <header>
+        <h1>The Mozark</h1>
+        <nav>
+            <ul>
+                <li><a href="{{ url_for('index') }}">Création</a></li>
+                <li><a href="{{ url_for('collection') }}">Collection Saison 0</a></li>
+            </ul>
+        </nav>
+    </header>
+    
+    <main>
+        <section id="collection">
+            <h2>Collection Saison 0</h2>
+            <p>
+                Chaque pièce de la collection (100 au total) est imprimée uniquement 10 fois, selon la demande.
+                L'œuvre – recréée en mosaïque à partir de 100 œuvres utilisées comme tuiles – incarne l'idée que
+                chacune des œuvres est à la fois une partie du tout et un reflet de la subjectivité.
+            </p>
+            <p>
+                Le support choisi (cadre, vêtement, mug, etc.) fait partie intégrante de l’œuvre, conférant ainsi
+                une unicité à chaque édition. Inspirée du monde digital avec une nostalgie de l’enfance, cette collection
+                prélaunch reflète la vision singulière de l’artiste.
+            </p>
+            <a href="https://www.etsy.com" target="_blank" class="btn">Voir sur Etsy</a>
+        </section>
+    </main>
+    
+    <footer>
+        <p>&copy; The Mozark</p>
+    </footer>
+</body>
+</html>
+
+============================================================
+
+
+============================================================
+Fichier : index.html
+Chemin  : C:\Users\suean\OneDrive\Desktop\tom\autoInsta\WebApp\templates\index.html
+============================================================
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>The Mozark - Création de mosaïques personnalisées</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header>
+    <h1>The Mozark</h1>
+    <nav>
+      <ul>
+        <li><a href="{{ url_for('index') }}">Création</a></li>
+        <li><a href="{{ url_for('collection') }}">Collection Saison 0</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <div id="main-content">
+      <!-- Colonne de gauche : container de la mosaïque -->
+      <div id="mosaic-column">
+        <div id="mosaic-container">
+          <!-- Loader intégré dans le container -->
+          <div id="loader" style="display: none;">
+            <!-- Loader minimal from Uiverse.io by Nawsome -->
+            <div class="pl">
+              <div class="pl__dot"></div>
+              <div class="pl__dot"></div>
+              <div class="pl__dot"></div>
+              <div class="pl__dot"></div>
+              <div class="pl__dot"></div>
+              <div class="pl__dot"></div>
+              <div class="pl__dot"></div>
+              <div class="pl__dot"></div>
+              <div class="pl__dot"></div>
+              <div class="pl__dot"></div>
+              <div class="pl__dot"></div>
+              <div class="pl__dot"></div>
+              <div class="pl__text">Loading…</div>
+            </div>
+            <div id="logMessages"></div>
+          </div>
+          <div id="zoom-controls">
+            <button id="zoom_in" class="zoom-btn">+</button>
+            <button id="zoom_out" class="zoom-btn">-</button>
+            <button id="fullscreen_btn" class="zoom-btn">Fullscreen</button>
+          </div>
+          <div id="mosaic-wrapper">
+            <img id="mosaicImage" src="" alt="Mosaïque générée">
+          </div>
+          <!-- Affichage de la résolution en bas à droite -->
+          <div id="mosaicResolution"></div>
+        </div>
+      </div>
+      <!-- Colonne de droite : réglages -->
+      <div id="settings-column">
+        <form id="mosaicForm">
+          <div class="form-group">
+            <label for="main_image">Image principale :</label>
+            <input type="file" id="main_image" name="main_image" accept="image/*" required>
+          </div>
+          <div class="form-group">
+            <label for="tile_images">Dossier d'images pour tuiles :</label>
+            <input type="file" id="tile_images" name="tile_images" accept="image/*" webkitdirectory directory multiple required>
+          </div>
+          <div class="form-group">
+            <label for="tile_size">Taille des tuiles : <span id="tile_size_value">150</span> px</label>
+            <input type="range" id="tile_size" name="tile_size" min="50" max="300" value="150" step="10">
+          </div>
+          <div class="form-group">
+            <label for="main_visibility">Visibilité de l'image principale : <span id="main_visibility_value">0.3</span></label>
+            <input type="range" id="main_visibility" name="main_visibility" min="0" max="1" value="0.3" step="0.1">
+          </div>
+          <div class="form-group">
+            <label for="final_scale">Taille finale de la mosaïque : <span id="final_scale_value">1</span> (facteur)</label>
+            <input type="range" id="final_scale" name="final_scale" min="0.1" max="2" value="1" step="0.1">
+          </div>
+          <div class="form-group">
+            <label for="max_mosaic_definition">Définition maximale de la mosaïque : <span id="max_mosaic_definition_value">4096</span> px</label>
+            <input type="range" id="max_mosaic_definition" name="max_mosaic_definition" min="1024" max="16000" value="4096" step="256">
+          </div>
+          <div class="form-group">
+            <label for="min_usage">% d'utilisation minimale des tuiles : <span id="min_usage_value">90</span>%</label>
+            <input type="range" id="min_usage" name="min_usage" min="0" max="100" value="90" step="1">
+          </div>
+          <!-- Bouton de génération retiré -->
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <p>&copy; The Mozark</p>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
+
+============================================================
+

@@ -1,0 +1,111 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>The Mozark - Création de mosaïques personnalisées</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header>
+    <h1>The Mozark</h1>
+    <nav>
+      <ul>
+        <li><a href="{{ url_for('index') }}">Création</a></li>
+        <li><a href="{{ url_for('collection') }}">Collection Saison 0</a></li>
+      </ul>
+    </nav>
+  </header>
+  
+  <main>
+    <div id="main-content">
+      <!-- Colonne de gauche : container de la mosaïque -->
+      <div id="mosaic-column">
+        <div id="mosaic-container">
+          <!-- Loader intégré dans le container -->
+          <div id="loader" style="display: none;">
+            <div class="main">
+              <div class="up">
+                <div class="loaders">
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                </div>
+                <div class="loadersB">
+                  <div class="loaderA"><div class="ball0"></div></div>
+                  <div class="loaderA"><div class="ball1"></div></div>
+                  <div class="loaderA"><div class="ball2"></div></div>
+                  <div class="loaderA"><div class="ball3"></div></div>
+                  <div class="loaderA"><div class="ball4"></div></div>
+                  <div class="loaderA"><div class="ball5"></div></div>
+                  <div class="loaderA"><div class="ball6"></div></div>
+                  <div class="loaderA"><div class="ball7"></div></div>
+                  <div class="loaderA"><div class="ball8"></div></div>
+                </div>
+              </div>
+            </div>
+            <!-- Le texte (logs) est déplacé en dessous de l'animation -->
+            <div id="logMessages"></div>
+          </div>
+          <div id="zoom-controls">
+            <button id="zoom_in" class="zoom-btn">+</button>
+            <button id="zoom_out" class="zoom-btn">-</button>
+            <button id="fullscreen_btn" class="zoom-btn">Fullscreen</button>
+          </div>
+          <div id="mosaic-wrapper">
+            <img id="mosaicImage" src="" alt="Mosaïque générée">
+          </div>
+          <div id="mosaicResolution"></div>
+        </div>
+      </div>
+      <!-- Colonne de droite : réglages -->
+      <div id="settings-column">
+        <form id="mosaicForm">
+          <div class="form-group">
+            <label for="main_image">Image principale :</label>
+            <input type="file" id="main_image" name="main_image" accept="image/*" required>
+          </div>
+          <div class="form-group">
+            <label for="tile_images">Dossier d'images pour tuiles :</label>
+            <input type="file" id="tile_images" name="tile_images" accept="image/*" webkitdirectory directory multiple required>
+          </div>
+          <div class="form-group">
+            <label for="tile_size">Taille des tuiles : <span id="tile_size_value">150</span> px</label>
+            <input type="range" id="tile_size" name="tile_size" min="50" max="600" value="150" step="10">
+          </div>
+          <div class="form-group">
+            <label for="main_visibility">Visibilité de l'image principale : <span id="main_visibility_value">0.3</span></label>
+            <input type="range" id="main_visibility" name="main_visibility" min="0" max="1" value="0.3" step="0.1">
+          </div>
+          <div class="form-group">
+            <label for="final_scale">Taille finale de la mosaïque : <span id="final_scale_value">1</span> (facteur)</label>
+            <input type="range" id="final_scale" name="final_scale" min="0.1" max="2" value="1" step="0.1">
+          </div>
+          <div class="form-group">
+            <label for="max_mosaic_definition">Définition maximale de la mosaïque : <span id="max_mosaic_definition_value">4096</span> px</label>
+            <input type="range" id="max_mosaic_definition" name="max_mosaic_definition" min="1024" max="16000" value="4096" step="256">
+          </div>
+          <div class="form-group">
+            <label for="min_usage">% d'utilisation minimale des tuiles : <span id="min_usage_value">90</span>%</label>
+            <input type="range" id="min_usage" name="min_usage" min="0" max="100" value="90" step="1">
+          </div>
+          <!-- Bouton de génération retiré -->
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <p>&copy; The Mozark</p>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
