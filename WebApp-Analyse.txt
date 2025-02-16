@@ -6,9 +6,11 @@ SOMMAIRE DE L'ANALYSE
     ├─ [D] css
         └─ [F] style.css
     └─ [D] js
-    │   └─ [F] main.js
+    │   ├─ [F] main.js
+    │   └─ [F] painting.js
 └─ [D] templates
 │   ├─ [F] collection.html
+│   ├─ [F] homemade_painting.html
 │   └─ [F] index.html
 
 
@@ -23,8 +25,9 @@ Chemin  : C:\Users\suean\OneDrive\Desktop\tom\autoInsta\WebApp\app.py
 import io
 import math
 import base64
+import random, colorsys
 import numpy as np
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from flask import Flask, render_template, request, jsonify
 
 # Désactiver la limite de pixels pour éviter l'erreur de "decompression bomb"
@@ -32,10 +35,9 @@ Image.MAX_IMAGE_PIXELS = None
 
 app = Flask(__name__)
 
-# --- Fonctions de traitement image ---
+# --- Fonctions de traitement image pour Mosaic (inchangées) ---
 
 def limit_image_definition(image, max_def):
-    """Redimensionne l'image si sa largeur ou hauteur dépasse max_def, en conservant le ratio."""
     if image.width > max_def or image.height > max_def:
         ratio = min(max_def / image.width, max_def / image.height)
         new_size = (int(image.width * ratio), int(image.height * ratio))
@@ -52,11 +54,6 @@ def calculate_color_stats(image):
     return avg_color, img_array.std(axis=(0, 1))
 
 def load_tiles_from_files(files, tile_size, max_mosaic_def):
-    """
-    Charge les images de tuiles depuis les fichiers uploadés, en les limitant à max_mosaic_def,
-    puis en les redimensionnant à la taille de tuile souhaitée.
-    Chaque tuile reçoit un compteur 'usage' initialisé à 0.
-    """
     tiles = []
     for f in files:
         try:
@@ -71,18 +68,11 @@ def load_tiles_from_files(files, tile_size, max_mosaic_def):
     return tiles
 
 def create_mosaic(main_image, tiles, tile_size, min_usage):
-    """
-    Crée la mosaïque de manière séquentielle.
-    Pour chaque bloc de l'image principale, on choisit la tuile dont la couleur moyenne est la plus proche.
-    Pour favoriser l'utilisation des tuiles non encore utilisées, on applique un bonus sur la distance
-    calculée en fonction de min_usage.
-    """
     mosaic_width = (main_image.width // tile_size) * tile_size
     mosaic_height = (main_image.height // tile_size) * tile_size
     mosaic_image = Image.new('RGB', (mosaic_width, mosaic_height))
     
-    bonus = (min_usage / 100.0) * 0.3  # ex: pour 100% → bonus = 0.3, pour 90% → bonus = 0.27
-    
+    bonus = (min_usage / 100.0) * 0.3
     for y in range(0, mosaic_height, tile_size):
         for x in range(0, mosaic_width, tile_size):
             block = main_image.crop((x, y, x + tile_size, y + tile_size))
@@ -99,8 +89,102 @@ def create_mosaic(main_image, tiles, tile_size, min_usage):
             mosaic_image.paste(best_tile["image"], (x, y))
     return mosaic_image
 
-# --- Routes Flask ---
+# --- Traitement pour Homemade Painting ---
 
+@app.route('/homemade_painting', methods=['GET', 'POST'])
+def homemade_painting():
+    if request.method == 'GET':
+        return render_template('homemade_painting.html')
+    try:
+        painting_file = request.files.get('painting_image')
+        num_colors = int(request.form.get('num_colors', 6))
+        palette_override = request.form.get('palette_override', None)
+        if not painting_file:
+            return jsonify({'error': 'Image manquante'}), 400
+
+        image = Image.open(painting_file.stream).convert('RGB')
+        # Quantifier en mode "P" pour extraire la palette
+        p_image = image.convert("P", palette=Image.ADAPTIVE, colors=num_colors)
+        palette_data = p_image.getpalette()[:num_colors*3]
+        colors = []
+        for i in range(0, len(palette_data), 3):
+            r, g, b = palette_data[i], palette_data[i+1], palette_data[i+2]
+            hex_color = '#{:02x}{:02x}{:02x}'.format(r, g, b)
+            colors.append(hex_color)
+        if palette_override:
+            new_palette = [c.strip() for c in palette_override.split(',')]
+            palette_ints = []
+            for hex_color in new_palette:
+                if hex_color.startswith('#'):
+                    hex_color = hex_color[1:]
+                r = int(hex_color[0:2], 16)
+                g = int(hex_color[2:4], 16)
+                b = int(hex_color[4:6], 16)
+                palette_ints.extend([r, g, b])
+            palette_ints += [0]*(768 - len(palette_ints))
+            p_image.putpalette(palette_ints)
+            colors = new_palette[:num_colors]
+        quantized = p_image.convert("RGB")
+        
+        # Extraction des contours
+        edges = quantized.filter(ImageFilter.FIND_EDGES)
+        edges_gray = edges.convert("L")
+        threshold_value = 50
+        mask = edges_gray.point(lambda p: 255 if p > threshold_value else 0)
+        black_img = Image.new("RGB", quantized.size, (0, 0, 0))
+        # Ici, le composite force les zones de masque à devenir noires (pour avoir des lignes fines)
+        result = Image.composite(black_img, quantized, mask)
+        
+        # Pour prévisualisation BW, créer une version inversée des bords (noir sur blanc)
+        bw = ImageOps.invert(mask).convert("RGB")
+        
+        img_io = io.BytesIO()
+        result.save(img_io, 'JPEG', quality=95)
+        img_io.seek(0)
+        base64_img = base64.b64encode(img_io.getvalue()).decode('utf-8')
+        
+        bw_io = io.BytesIO()
+        bw.save(bw_io, 'JPEG', quality=95)
+        bw_io.seek(0)
+        base64_bw = base64.b64encode(bw_io.getvalue()).decode('utf-8')
+        
+        return jsonify({'image': base64_img, 'palette': colors, 'bw_image': base64_bw})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# --- Génération d'une nouvelle palette ---
+def generate_palette(num_colors, base_palette=None):
+    # Si une palette de base est fournie, en utiliser la première couleur
+    if base_palette:
+        first_color = base_palette.split(',')[0]
+        r = int(first_color[1:3], 16) / 255.0
+        g = int(first_color[3:5], 16) / 255.0
+        b = int(first_color[5:7], 16) / 255.0
+        h, s, v = colorsys.rgb_to_hsv(r, g, b)
+    else:
+        h = random.random()
+        s = 0.6 + random.random() * 0.4
+        v = 0.6 + random.random() * 0.4
+    palette = []
+    for i in range(num_colors):
+        # Ajouter un léger décalage aléatoire pour varier à chaque appel
+        new_h = (h + i / num_colors + random.uniform(-0.05, 0.05)) % 1.0
+        r, g, b = colorsys.hsv_to_rgb(new_h, s, v)
+        hex_color = '#{:02x}{:02x}{:02x}'.format(int(r*255), int(g*255), int(b*255))
+        palette.append(hex_color)
+    return palette
+
+@app.route('/generate_palette', methods=['POST'])
+def generate_palette_route():
+    try:
+        num_colors = int(request.form.get('num_colors', 6))
+        base_palette = request.form.get('base_palette', None)
+        new_palette = generate_palette(num_colors, base_palette)
+        return jsonify({'palette': new_palette})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# --- Routes existantes ---
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -115,43 +199,32 @@ def generate():
         main_file = request.files.get('main_image')
         tile_files = request.files.getlist('tile_images')
         
-        # Récupération des paramètres
         tile_size = int(request.form.get('tile_size', 150))
         main_visibility = float(request.form.get('main_visibility', 0.2))
         final_scale = float(request.form.get('final_scale', 0.5))
-        min_usage = float(request.form.get('min_usage', 90))  # % d'utilisation minimale
+        min_usage = float(request.form.get('min_usage', 90))
         max_mosaic_def = int(request.form.get('max_mosaic_definition', 1024))
         
         if not main_file or len(tile_files) == 0:
             return jsonify({'error': 'Images manquantes'}), 400
         
-        # Traitement de l'image principale
         main_image = Image.open(main_file.stream).convert('RGB')
-        upscale_factor = 15  # pour obtenir des détails fins
+        upscale_factor = 15
         main_image = upscale_image(main_image, upscale_factor)
         
-        # Chargement des tuiles
         tiles = load_tiles_from_files(tile_files, tile_size, max_mosaic_def)
         if len(tiles) == 0:
             return jsonify({'error': 'Aucune image de tuile valide'}), 400
         
-        # Création de la mosaïque
         mosaic = create_mosaic(main_image, tiles, tile_size, min_usage)
-        
-        # Limiter la résolution finale de la mosaïque
         mosaic = limit_image_definition(mosaic, max_mosaic_def)
-        
-        # Blend avec l'image principale
         if main_visibility > 0:
             main_resized = main_image.resize(mosaic.size, Image.LANCZOS)
             mosaic = Image.blend(mosaic, main_resized, main_visibility)
-        
-        # Redimensionnement final (scale)
         if final_scale != 1.0:
             final_size = (int(mosaic.width * final_scale), int(mosaic.height * final_scale))
             mosaic = mosaic.resize(final_size, Image.LANCZOS)
         
-        # Encodage en base64
         img_io = io.BytesIO()
         mosaic.save(img_io, 'JPEG', quality=95)
         img_io.seek(0)
@@ -626,6 +699,161 @@ document.addEventListener('DOMContentLoaded', function(){
 
 
 ============================================================
+Fichier : painting.js
+Chemin  : C:\Users\suean\OneDrive\Desktop\tom\autoInsta\WebApp\static\js\painting.js
+============================================================
+document.addEventListener('DOMContentLoaded', function(){
+    const paintingForm = document.getElementById('paintingForm');
+    const numColorsSlider = document.getElementById('num_colors');
+    const numColorsValue = document.getElementById('num_colors_value');
+    const loadingDiv = document.getElementById('loader');
+    const logMessagesDiv = document.getElementById('logMessages');
+    const paintingImage = document.getElementById('paintingImage');
+    const mosaicContainer = document.getElementById('mosaic-container');
+    const paletteContainer = document.getElementById('paletteContainer');
+    const regenPaletteBtn = document.getElementById('regen_palette');
+    const bwPreviewSmall = document.getElementById('bwPreviewSmall');
+  
+    let debounceTimer;
+    const DEBOUNCE_DELAY = 3000;
+  
+    let logTimer;
+    const logMessages = [
+      "Préparation de l'image...",
+      "Quantification des couleurs...",
+      "Extraction des contours...",
+      "Création du rendu..."
+    ];
+    let logIndex = 0;
+  
+    function startLogUpdates() {
+      logMessagesDiv.textContent = logMessages[logIndex];
+      logTimer = setInterval(() => {
+        logIndex = (logIndex + 1) % logMessages.length;
+        logMessagesDiv.textContent = logMessages[logIndex];
+      }, 1000);
+    }
+  
+    function stopLogUpdates() {
+      clearInterval(logTimer);
+      logMessagesDiv.textContent = "";
+    }
+  
+    numColorsSlider.addEventListener('input', () => {
+      numColorsValue.textContent = numColorsSlider.value;
+      debounceSubmit();
+    });
+  
+    document.getElementById('painting_image').addEventListener('change', () => {
+      debounceSubmit(0);
+    });
+  
+    function debounceSubmit(delay = DEBOUNCE_DELAY) {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        submitForm();
+      }, delay);
+    }
+  
+    function submitForm() {
+      loadingDiv.style.display = 'flex';
+      startLogUpdates();
+      const formData = new FormData(paintingForm);
+      const paletteOverrideInputs = document.querySelectorAll('.palette-input');
+      let paletteOverride = [];
+      if (paletteOverrideInputs.length > 0) {
+        paletteOverrideInputs.forEach(input => {
+          paletteOverride.push(input.value);
+        });
+      }
+      if (paletteOverride.length > 0) {
+        formData.append('palette_override', paletteOverride.join(','));
+      }
+      fetch('/homemade_painting', {
+        method: 'POST',
+        body: formData
+      })
+        .then(response => response.json())
+        .then(data => {
+          loadingDiv.style.display = 'none';
+          stopLogUpdates();
+          if (data.error) {
+            alert("Erreur : " + data.error);
+          } else {
+            paintingImage.src = 'data:image/jpeg;base64,' + data.image;
+            // Afficher la palette
+            displayPalette(data.palette);
+            // Mettre à jour la prévisualisation BW dans le conteneur small
+            if(data.bw_image) {
+              bwPreviewSmall.src = 'data:image/jpeg;base64,' + data.bw_image;
+            }
+          }
+        })
+        .catch(error => {
+          loadingDiv.style.display = 'none';
+          stopLogUpdates();
+          alert("Erreur lors de la génération de la peinture.");
+          console.error(error);
+        });
+    }
+  
+    function displayPalette(palette) {
+      paletteContainer.innerHTML = '<h3>Palette</h3>';
+      palette.forEach(color => {
+        const div = document.createElement('div');
+        div.style.display = 'inline-block';
+        div.style.margin = '0.5em';
+        div.innerHTML = `<input type="color" class="palette-input" value="${color}">`;
+        paletteContainer.appendChild(div);
+      });
+      document.querySelectorAll('.palette-input').forEach(input => {
+        input.addEventListener('input', () => {
+          debounceSubmit();
+        });
+      });
+    }
+  
+    regenPaletteBtn.addEventListener('click', () => {
+      const formData = new FormData();
+      formData.append('num_colors', numColorsSlider.value);
+      const paletteOverrideInputs = document.querySelectorAll('.palette-input');
+      let currentPalette = [];
+      if (paletteOverrideInputs.length > 0) {
+        paletteOverrideInputs.forEach(input => {
+          currentPalette.push(input.value);
+        });
+      }
+      if (currentPalette.length > 0) {
+        formData.append('base_palette', currentPalette.join(','));
+      }
+      fetch('/generate_palette', {
+        method: 'POST',
+        body: formData
+      })
+        .then(response => response.json())
+        .then(data => {
+          if (data.error) {
+            alert("Erreur : " + data.error);
+          } else {
+            displayPalette(data.palette);
+            debounceSubmit();
+          }
+        })
+        .catch(error => {
+          alert("Erreur lors de la génération de la nouvelle charte.");
+          console.error(error);
+        });
+    });
+  
+    if (document.getElementById('painting_image').files.length > 0) {
+      submitForm();
+    }
+  });
+  
+============================================================
+
+
+============================================================
 Fichier : collection.html
 Chemin  : C:\Users\suean\OneDrive\Desktop\tom\autoInsta\WebApp\templates\collection.html
 ============================================================
@@ -642,8 +870,9 @@ Chemin  : C:\Users\suean\OneDrive\Desktop\tom\autoInsta\WebApp\templates\collect
         <h1>The Mozark</h1>
         <nav>
             <ul>
-                <li><a href="{{ url_for('index') }}">Création</a></li>
-                <li><a href="{{ url_for('collection') }}">Collection Saison 0</a></li>
+                <li><a href="{{ url_for('index') }}">Mosaic</a></li>
+                <li><a href="{{ url_for('homemade_painting') }}">Homemade Painting</a></li>
+                <li><a href="{{ url_for('collection') }}">Collection</a></li>
             </ul>
         </nav>
     </header>
@@ -675,6 +904,106 @@ Chemin  : C:\Users\suean\OneDrive\Desktop\tom\autoInsta\WebApp\templates\collect
 
 
 ============================================================
+Fichier : homemade_painting.html
+Chemin  : C:\Users\suean\OneDrive\Desktop\tom\autoInsta\WebApp\templates\homemade_painting.html
+============================================================
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>The Mozark - Homemade Painting</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header>
+    <h1>The Mozark</h1>
+    <nav>
+      <ul>
+        <li><a href="{{ url_for('index') }}">Mosaic</a></li>
+        <li><a href="{{ url_for('homemade_painting') }}">Homemade Painting</a></li>
+        <li><a href="{{ url_for('collection') }}">Collection</a></li>
+      </ul>
+    </nav>
+  </header>
+  
+  <main>
+    <div id="main-content">
+      <!-- Colonne de gauche : visualisation -->
+      <div id="mosaic-column">
+        <div id="mosaic-container">
+          <div id="loader" style="display: none;">
+            <div class="main">
+              <div class="up">
+                <div class="loaders">
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                </div>
+                <div class="loadersB">
+                  <div class="loaderA"><div class="ball0"></div></div>
+                  <div class="loaderA"><div class="ball1"></div></div>
+                  <div class="loaderA"><div class="ball2"></div></div>
+                  <div class="loaderA"><div class="ball3"></div></div>
+                  <div class="loaderA"><div class="ball4"></div></div>
+                  <div class="loaderA"><div class="ball5"></div></div>
+                  <div class="loaderA"><div class="ball6"></div></div>
+                  <div class="loaderA"><div class="ball7"></div></div>
+                  <div class="loaderA"><div class="ball8"></div></div>
+                </div>
+              </div>
+            </div>
+            <div id="logMessages"></div>
+          </div>
+          <div id="mosaic-wrapper">
+            <img id="paintingImage" src="" alt="Painting generated">
+          </div>
+          <div id="mosaicResolution"></div>
+        </div>
+      </div>
+      <!-- Colonne de droite : réglages -->
+      <div id="settings-column">
+        <form id="paintingForm">
+          <div class="form-group">
+            <label for="painting_image">Image à peindre :</label>
+            <input type="file" id="painting_image" name="painting_image" accept="image/*" required>
+          </div>
+          <div class="form-group">
+            <label for="num_colors">Nombre de couleurs (3 à 15) : <span id="num_colors_value">6</span></label>
+            <input type="range" id="num_colors" name="num_colors" min="3" max="15" value="6" step="1">
+          </div>
+          <!-- Zone pour afficher et modifier la palette -->
+          <div class="form-group" id="paletteContainer"></div>
+          <!-- Bouton pour générer une nouvelle charte -->
+          <button type="button" id="regen_palette">Nouvelle charte</button>
+          <!-- Nouveau conteneur pour la prévisualisation BW, de petite taille -->
+          <div id="bwPreviewContainerSmall" style="margin-top:1em;">
+            <h3>Contours (BW)</h3>
+            <img id="bwPreviewSmall" src="" alt="Prévisualisation BW" style="width:200px; border:1px solid #ccc;">
+          </div>
+        </form>
+      </div>
+    </div>
+  </main>
+  
+  <footer>
+    <p>&copy; The Mozark</p>
+  </footer>
+  
+  <script src="{{ url_for('static', filename='js/painting.js') }}"></script>
+</body>
+</html>
+
+============================================================
+
+
+============================================================
 Fichier : index.html
 Chemin  : C:\Users\suean\OneDrive\Desktop\tom\autoInsta\WebApp\templates\index.html
 ============================================================
@@ -691,8 +1020,9 @@ Chemin  : C:\Users\suean\OneDrive\Desktop\tom\autoInsta\WebApp\templates\index.h
     <h1>The Mozark</h1>
     <nav>
       <ul>
-        <li><a href="{{ url_for('index') }}">Création</a></li>
-        <li><a href="{{ url_for('collection') }}">Collection Saison 0</a></li>
+        <li><a href="{{ url_for('index') }}">Mosaic</a></li>
+        <li><a href="{{ url_for('homemade_painting') }}">Homemade Painting</a></li>
+        <li><a href="{{ url_for('collection') }}">Collection</a></li>
       </ul>
     </nav>
   </header>

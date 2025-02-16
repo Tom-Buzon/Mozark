@@ -17,13 +17,22 @@
     </nav>
   </header>
   
+  <!-- Conteneur principal englobant les deux colonnes -->
   <main>
     <div id="main-content">
       <!-- Colonne de gauche : visualisation -->
       <div id="mosaic-column">
         <div id="mosaic-container">
+            <div id="zoom-controls">
+                <button id="zoom_in" class="zoom-btn">+</button>
+                <button id="zoom_out" class="zoom-btn">-</button>
+                <button id="fullscreen_btn" class="zoom-btn">Fullscreen</button>
+              </div>
           <div id="loader" style="display: none;">
             <div class="main">
+                
+
+                
               <div class="up">
                 <div class="loaders">
                   <div class="loader"></div>
@@ -52,6 +61,7 @@
             </div>
             <div id="logMessages"></div>
           </div>
+          
           <div id="mosaic-wrapper">
             <img id="paintingImage" src="" alt="Painting generated">
           </div>
@@ -74,9 +84,9 @@
           <!-- Bouton pour générer une nouvelle charte -->
           <button type="button" id="regen_palette">Nouvelle charte</button>
           <!-- Nouveau conteneur pour la prévisualisation BW, de petite taille -->
-          <div id="bwPreviewContainerSmall" style="margin-top:1em;">
+          <div id="bwPreviewContainerSmall" style="margin-top: 1em;">
             <h3>Contours (BW)</h3>
-            <img id="bwPreviewSmall" src="" alt="Prévisualisation BW" style="width:200px; border:1px solid #ccc;">
+            <img id="bwPreviewSmall" src="" alt="Prévisualisation BW" style="width: 200px; border: 1px solid #ccc;">
           </div>
         </form>
       </div>
@@ -87,6 +97,7 @@
     <p>&copy; The Mozark</p>
   </footer>
   
+  <!-- Chargement du script spécifique à Homemade Painting -->
   <script src="{{ url_for('static', filename='js/painting.js') }}"></script>
 </body>
 </html>
