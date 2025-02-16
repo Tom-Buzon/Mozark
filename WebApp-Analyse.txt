@@ -61,7 +61,6 @@ def load_tiles_from_files(files, tile_size, max_mosaic_def):
     for f in files:
         try:
             img = Image.open(f.stream).convert('RGB')
-            # Limiter la taille de la tuile (pour que les images soient cohérentes)
             img = limit_image_definition(img, max_mosaic_def)
             img = img.resize((tile_size, tile_size), Image.LANCZOS)
             avg_color, _ = calculate_color_stats(img)
@@ -92,10 +91,7 @@ def create_mosaic(main_image, tiles, tile_size, min_usage):
             best_eff_distance = float('inf')
             for tile in tiles:
                 distance = np.linalg.norm(tile["avg_color"] - block_avg)
-                if tile["usage"] == 0:
-                    effective_distance = distance * (1 - bonus)
-                else:
-                    effective_distance = distance
+                effective_distance = distance * (1 - bonus) if tile["usage"] == 0 else distance
                 if effective_distance < best_eff_distance:
                     best_eff_distance = effective_distance
                     best_tile = tile
@@ -131,11 +127,10 @@ def generate():
         
         # Traitement de l'image principale
         main_image = Image.open(main_file.stream).convert('RGB')
-        # On upscale pour obtenir des détails fins
-        upscale_factor = 15
+        upscale_factor = 15  # pour obtenir des détails fins
         main_image = upscale_image(main_image, upscale_factor)
         
-        # Chargement des tuiles (limitées par max_mosaic_def)
+        # Chargement des tuiles
         tiles = load_tiles_from_files(tile_files, tile_size, max_mosaic_def)
         if len(tiles) == 0:
             return jsonify({'error': 'Aucune image de tuile valide'}), 400
@@ -143,10 +138,10 @@ def generate():
         # Création de la mosaïque
         mosaic = create_mosaic(main_image, tiles, tile_size, min_usage)
         
-        # Limiter la résolution finale de la mosaïque selon le paramètre max_mosaic_definition
+        # Limiter la résolution finale de la mosaïque
         mosaic = limit_image_definition(mosaic, max_mosaic_def)
         
-        # Application du blend avec l'image principale si demandé
+        # Blend avec l'image principale
         if main_visibility > 0:
             main_resized = main_image.resize(mosaic.size, Image.LANCZOS)
             mosaic = Image.blend(mosaic, main_resized, main_visibility)
@@ -156,7 +151,7 @@ def generate():
             final_size = (int(mosaic.width * final_scale), int(mosaic.height * final_scale))
             mosaic = mosaic.resize(final_size, Image.LANCZOS)
         
-        # Encodage en base64 pour renvoyer l'image
+        # Encodage en base64
         img_io = io.BytesIO()
         mosaic.save(img_io, 'JPEG', quality=95)
         img_io.seek(0)
@@ -285,7 +280,7 @@ body {
     position: absolute;
     bottom: 5px;
     right: 5px;
-    background: rgba(255, 255, 255, 0.7);
+    background: rgba(255,255,255,0.7);
     padding: 3px 6px;
     font-size: 0.9em;
     border-radius: 4px;
@@ -330,225 +325,132 @@ body {
     background: rgba(255,255,255,0.9);
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: space-evenly;
     align-items: center;
     z-index: 20;
   }
   
-  /* Loader minimal from Uiverse.io by Nawsome */
-  .pl {
-    box-shadow: 2em 0 2em rgba(0, 0, 0, 0.2) inset, -2em 0 2em rgba(255, 255, 255, 0.1) inset;
+  /* Loader animation from Uiverse.io by Praashoo7 */
+  .main {
     display: flex;
-    justify-content: center;
     align-items: center;
-    position: relative;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    transform: rotateX(30deg) rotateZ(45deg);
-    width: 14em;
-    height: 14em;
-    color: white;
+    justify-content: center;
   }
   
-  .pl, .pl__dot {
-    border-radius: 50%;
+  .loaders,
+  .loadersB {
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   
-  .pl__dot {
-    animation-name: shadow724;
-    box-shadow: 0.1em 0.1em 0 0.1em black, 0.3em 0 0.3em rgba(0, 0, 0, 0.5);
-    top: calc(50% - 0.75em);
-    left: calc(50% - 0.75em);
-    width: 1.5em;
-    height: 1.5em;
-  }
-  
-  .pl__dot, .pl__dot:before, .pl__dot:after {
-    animation-duration: 2s;
-    animation-iteration-count: infinite;
+  .loader {
     position: absolute;
+    width: 1.15em;
+    height: 13em;
+    border-radius: 50px;
+    background: #e0e0e0;
   }
-  
-  .pl__dot:before, .pl__dot:after {
+  .loader:after {
     content: "";
-    display: block;
+    position: absolute;
     left: 0;
-    width: inherit;
-    transition: background-color var(--trans-dur);
+    top: 0;
+    width: 1.15em;
+    height: 5em;
+    background: #e0e0e0;
+    border-radius: 50px;
+    border: 1px solid #e2e2e2;
+    box-shadow: inset 5px 5px 15px rgba(211,210,210,0.67),
+                inset -5px -5px 15px rgba(233,233,233,0.67);
+    mask-image: linear-gradient(to bottom, black calc(100% - 48px), transparent 100%);
   }
-  
-  .pl__dot:before {
-    animation-name: pushInOut1724;
-    background-color: var(--bg);
-    border-radius: inherit;
-    box-shadow: 0.05em 0 0.1em transparent inset;
-    height: inherit;
-    z-index: 1;
-  }
-  
-  .pl__dot:after {
-    animation-name: pushInOut2724;
-    background-color: var(--primary1);
-    border-radius: 0.75em;
-    box-shadow: 0.1em 0.3em 0.2em transparent inset, 0 -0.4em 0.2em transparent inset, 0 -1em 0.25em rgba(0, 0, 0, 0.3) inset;
+  .loader::before {
+    content: "";
+    position: absolute;
     bottom: 0;
-    clip-path: polygon(0 75%, 100% 75%, 100% 100%, 0 100%);
-    height: 3em;
-    transform: rotate(-45deg);
-    transform-origin: 50% 2.25em;
+    right: 0;
+    width: 1.15em;
+    height: 4.5em;
+    background: #e0e0e0;
+    border-radius: 50px;
+    border: 1px solid #e2e2e2;
+    box-shadow: inset 5px 5px 15px rgba(211,210,210,0.67),
+                inset -5px -5px 15px rgba(233,233,233,0.67);
+    mask-image: linear-gradient(to top, black calc(100% - 48px), transparent 100%);
+  }
+  .loaderA {
+    position: absolute;
+    width: 1.15em;
+    height: 13em;
+    border-radius: 50px;
+    background: transparent;
+  }
+  .ball0,
+  .ball1,
+  .ball2,
+  .ball3,
+  .ball4,
+  .ball5,
+  .ball6,
+  .ball7,
+  .ball8,
+  .ball9 {
+    width: 1.15em;
+    height: 1.15em;
+    box-shadow: rgba(0,0,0,0.17) 0px -10px 10px 0px inset,
+                rgba(0,0,0,0.15) 0px -15px 15px 0px inset,
+                rgba(0,0,0,0.1) 0px -40px 20px 0px inset,
+                rgba(0,0,0,0.06) 0px 2px 1px,
+                rgba(0,0,0,0.09) 0px 4px 2px,
+                rgba(0,0,0,0.09) 0px 8px 4px,
+                rgba(0,0,0,0.09) 0px 16px 8px,
+                rgba(0,0,0,0.09) 0px 32px 16px,
+                0px -1px 15px -8px rgba(0,0,0,0.09);
+    border-radius: 50%;
+    transition: transform 800ms cubic-bezier(1, -0.4, 0, 1.4);
+    background-color: rgba(232,232,232,1);
+    animation: 3.63s move ease-in-out infinite;
+  }
+  .loader:nth-child(2) { transform: rotate(20deg); }
+  .loader:nth-child(3) { transform: rotate(40deg); }
+  .loader:nth-child(4) { transform: rotate(60deg); }
+  .loader:nth-child(5) { transform: rotate(80deg); }
+  .loader:nth-child(6) { transform: rotate(100deg); }
+  .loader:nth-child(7) { transform: rotate(120deg); }
+  .loader:nth-child(8) { transform: rotate(140deg); }
+  .loader:nth-child(9) { transform: rotate(160deg); }
+  
+  .loaderA:nth-child(2) { transform: rotate(20deg); }
+  .loaderA:nth-child(3) { transform: rotate(40deg); }
+  .loaderA:nth-child(4) { transform: rotate(60deg); }
+  .loaderA:nth-child(5) { transform: rotate(80deg); }
+  .loaderA:nth-child(6) { transform: rotate(100deg); }
+  .loaderA:nth-child(7) { transform: rotate(120deg); }
+  .loaderA:nth-child(8) { transform: rotate(140deg); }
+  .loaderA:nth-child(9) { transform: rotate(160deg); }
+  
+  .ball1 { animation-delay: 0.2s; }
+  .ball2 { animation-delay: 0.4s; }
+  .ball3 { animation-delay: 0.6s; }
+  .ball4 { animation-delay: 0.8s; }
+  .ball5 { animation-delay: 1s; }
+  .ball6 { animation-delay: 1.2s; }
+  .ball7 { animation-delay: 1.4s; }
+  .ball8 { animation-delay: 1.6s; }
+  
+  @keyframes move {
+    0% { transform: translateY(0em); }
+    50% { transform: translateY(12em); }
+    100% { transform: translateY(0em); }
   }
   
-  .pl__dot:nth-child(1) {
-    transform: rotate(0deg) translateX(5em) rotate(0deg);
-    z-index: 5;
-  }
-  .pl__dot:nth-child(1), .pl__dot:nth-child(1):before, .pl__dot:nth-child(1):after {
-    animation-delay: 0s;
-  }
-  
-  .pl__dot:nth-child(2) {
-    transform: rotate(-30deg) translateX(5em) rotate(30deg);
-    z-index: 4;
-  }
-  .pl__dot:nth-child(2), .pl__dot:nth-child(2):before, .pl__dot:nth-child(2):after {
-    animation-delay: -0.1666666667s;
-  }
-  
-  .pl__dot:nth-child(3) {
-    transform: rotate(-60deg) translateX(5em) rotate(60deg);
-    z-index: 3;
-  }
-  .pl__dot:nth-child(3), .pl__dot:nth-child(3):before, .pl__dot:nth-child(3):after {
-    animation-delay: -0.3333333333s;
-  }
-  
-  .pl__dot:nth-child(4) {
-    transform: rotate(-90deg) translateX(5em) rotate(90deg);
-    z-index: 2;
-  }
-  .pl__dot:nth-child(4), .pl__dot:nth-child(4):before, .pl__dot:nth-child(4):after {
-    animation-delay: -0.5s;
-  }
-  
-  .pl__dot:nth-child(5) {
-    transform: rotate(-120deg) translateX(5em) rotate(120deg);
-    z-index: 1;
-  }
-  .pl__dot:nth-child(5), .pl__dot:nth-child(5):before, .pl__dot:nth-child(5):after {
-    animation-delay: -0.6666666667s;
-  }
-  
-  .pl__dot:nth-child(6) {
-    transform: rotate(-150deg) translateX(5em) rotate(150deg);
-    z-index: 1;
-  }
-  .pl__dot:nth-child(6), .pl__dot:nth-child(6):before, .pl__dot:nth-child(6):after {
-    animation-delay: -0.8333333333s;
-  }
-  
-  .pl__dot:nth-child(7) {
-    transform: rotate(-180deg) translateX(5em) rotate(180deg);
-    z-index: 2;
-  }
-  .pl__dot:nth-child(7), .pl__dot:nth-child(7):before, .pl__dot:nth-child(7):after {
-    animation-delay: -1s;
-  }
-  
-  .pl__dot:nth-child(8) {
-    transform: rotate(-210deg) translateX(5em) rotate(210deg);
-    z-index: 3;
-  }
-  .pl__dot:nth-child(8), .pl__dot:nth-child(8):before, .pl__dot:nth-child(8):after {
-    animation-delay: -1.1666666667s;
-  }
-  
-  .pl__dot:nth-child(9) {
-    transform: rotate(-240deg) translateX(5em) rotate(240deg);
-    z-index: 4;
-  }
-  .pl__dot:nth-child(9), .pl__dot:nth-child(9):before, .pl__dot:nth-child(9):after {
-    animation-delay: -1.3333333333s;
-  }
-  
-  .pl__dot:nth-child(10) {
-    transform: rotate(-270deg) translateX(5em) rotate(270deg);
-    z-index: 5;
-  }
-  .pl__dot:nth-child(10), .pl__dot:nth-child(10):before, .pl__dot:nth-child(10):after {
-    animation-delay: -1.5s;
-  }
-  
-  .pl__dot:nth-child(11) {
-    transform: rotate(-300deg) translateX(5em) rotate(300deg);
-    z-index: 6;
-  }
-  .pl__dot:nth-child(11), .pl__dot:nth-child(11):before, .pl__dot:nth-child(11):after {
-    animation-delay: -1.6666666667s;
-  }
-  
-  .pl__dot:nth-child(12) {
-    transform: rotate(-330deg) translateX(5em) rotate(330deg);
-    z-index: 6;
-  }
-  .pl__dot:nth-child(12), .pl__dot:nth-child(12):before, .pl__dot:nth-child(12):after {
-    animation-delay: -1.8333333333s;
-  }
-  
-  .pl__text {
-    font-size: 0.75em;
-    max-width: 5rem;
-    position: relative;
-    text-shadow: 0 0 0.1em rgba(0,0,0,0.5);
-    transform: rotateZ(-45deg);
-  }
-  
-  /* Animations */
-  @keyframes shadow724 {
-    from {
-      animation-timing-function: ease-in;
-      box-shadow: 0.1em 0.1em 0 0.1em #a66f4e, 0.3em 0 0.3em rgba(0, 0, 0, 0.3);
-    }
-    25% {
-      animation-timing-function: ease-out;
-      box-shadow: 0.1em 0.1em 0 0.1em black, 0.8em 0 0.8em rgba(0, 0, 0, 0.5);
-    }
-    50%, to {
-      box-shadow: 0.1em 0.1em 0 0.1em black, 0.3em 0 0.3em rgba(0, 0, 0, 0.3);
-    }
-  }
-  
-  @keyframes pushInOut1724 {
-    from {
-      animation-timing-function: ease-in;
-      background-color: #a66f4e;
-      transform: translate(0, 0);
-    }
-    25% {
-      animation-timing-function: ease-out;
-      background-color: var(--primary2);
-      transform: translate(-71%, -71%);
-    }
-    50%, to {
-      background-color: var(--bg);
-      transform: translate(0, 0);
-    }
-  }
-  
-  @keyframes pushInOut2724 {
-    from {
-      animation-timing-function: ease-in;
-      background-color: var(--bg);
-      clip-path: polygon(0 75%, 100% 75%, 100% 100%, 0 100%);
-    }
-    25% {
-      animation-timing-function: ease-out;
-      background-color: var(--primary1);
-      clip-path: polygon(0 0%, 100% 0%, 100% 100%, 0 100%);
-    }
-    50%, to {
-      background-color: var(--bg);
-      clip-path: polygon(0 75%, 100% 75%, 100% 100%, 0 100%);
-    }
+  /* Pour le texte du loader (logMessages) : placer le texte en dessous */
+  #logMessages {
+    margin-top: 1em;
+    text-align: center;
+    font-size: 1em;
+    color: #555;
   }
   
 ============================================================
@@ -697,15 +599,11 @@ document.addEventListener('DOMContentLoaded', function(){
     });
   
     mosaicImage.onload = function() {
-      const containerWidth = mosaicContainer.clientWidth;
-      const containerHeight = mosaicContainer.clientHeight;
-      const imageWidth = mosaicImage.naturalWidth;
-      const imageHeight = mosaicImage.naturalHeight;
-      const initialScale = Math.min(containerWidth / imageWidth, containerHeight / imageHeight);
-      currentZoom = initialScale;
+      // On force l'échelle initiale à 1 pour que l'image remplisse tout le container
+      currentZoom = 1;
       updateZoom();
       const resolutionDisplay = document.getElementById('mosaicResolution');
-      resolutionDisplay.textContent = `${imageWidth} x ${imageHeight}`;
+      resolutionDisplay.textContent = `${mosaicImage.naturalWidth} x ${mosaicImage.naturalHeight}`;
     };
   
     fullscreenBtn.addEventListener('click', () => {
@@ -718,7 +616,7 @@ document.addEventListener('DOMContentLoaded', function(){
       }
     });
   
-    // Si des fichiers sont déjà sélectionnés, lancer la génération
+    // Lancement automatique si des fichiers sont déjà sélectionnés
     if (document.getElementById('main_image').files.length > 0 && document.getElementById('tile_images').files.length > 0) {
       submitForm();
     }
@@ -780,6 +678,7 @@ Chemin  : C:\Users\suean\OneDrive\Desktop\tom\autoInsta\WebApp\templates\collect
 Fichier : index.html
 Chemin  : C:\Users\suean\OneDrive\Desktop\tom\autoInsta\WebApp\templates\index.html
 ============================================================
+<!-- templates/index.html -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -797,7 +696,7 @@ Chemin  : C:\Users\suean\OneDrive\Desktop\tom\autoInsta\WebApp\templates\index.h
       </ul>
     </nav>
   </header>
-
+  
   <main>
     <div id="main-content">
       <!-- Colonne de gauche : container de la mosaïque -->
@@ -805,22 +704,34 @@ Chemin  : C:\Users\suean\OneDrive\Desktop\tom\autoInsta\WebApp\templates\index.h
         <div id="mosaic-container">
           <!-- Loader intégré dans le container -->
           <div id="loader" style="display: none;">
-            <!-- Loader minimal from Uiverse.io by Nawsome -->
-            <div class="pl">
-              <div class="pl__dot"></div>
-              <div class="pl__dot"></div>
-              <div class="pl__dot"></div>
-              <div class="pl__dot"></div>
-              <div class="pl__dot"></div>
-              <div class="pl__dot"></div>
-              <div class="pl__dot"></div>
-              <div class="pl__dot"></div>
-              <div class="pl__dot"></div>
-              <div class="pl__dot"></div>
-              <div class="pl__dot"></div>
-              <div class="pl__dot"></div>
-              <div class="pl__text">Loading…</div>
+            <div class="main">
+              <div class="up">
+                <div class="loaders">
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                </div>
+                <div class="loadersB">
+                  <div class="loaderA"><div class="ball0"></div></div>
+                  <div class="loaderA"><div class="ball1"></div></div>
+                  <div class="loaderA"><div class="ball2"></div></div>
+                  <div class="loaderA"><div class="ball3"></div></div>
+                  <div class="loaderA"><div class="ball4"></div></div>
+                  <div class="loaderA"><div class="ball5"></div></div>
+                  <div class="loaderA"><div class="ball6"></div></div>
+                  <div class="loaderA"><div class="ball7"></div></div>
+                  <div class="loaderA"><div class="ball8"></div></div>
+                </div>
+              </div>
             </div>
+            <!-- Le texte (logs) est déplacé en dessous de l'animation -->
             <div id="logMessages"></div>
           </div>
           <div id="zoom-controls">
@@ -831,7 +742,6 @@ Chemin  : C:\Users\suean\OneDrive\Desktop\tom\autoInsta\WebApp\templates\index.h
           <div id="mosaic-wrapper">
             <img id="mosaicImage" src="" alt="Mosaïque générée">
           </div>
-          <!-- Affichage de la résolution en bas à droite -->
           <div id="mosaicResolution"></div>
         </div>
       </div>
@@ -848,7 +758,7 @@ Chemin  : C:\Users\suean\OneDrive\Desktop\tom\autoInsta\WebApp\templates\index.h
           </div>
           <div class="form-group">
             <label for="tile_size">Taille des tuiles : <span id="tile_size_value">150</span> px</label>
-            <input type="range" id="tile_size" name="tile_size" min="50" max="300" value="150" step="10">
+            <input type="range" id="tile_size" name="tile_size" min="50" max="600" value="150" step="10">
           </div>
           <div class="form-group">
             <label for="main_visibility">Visibilité de l'image principale : <span id="main_visibility_value">0.3</span></label>

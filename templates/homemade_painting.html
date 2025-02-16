@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>The Mozark - Homemade Painting</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header>
+    <h1>The Mozark</h1>
+    <nav>
+      <ul>
+        <li><a href="{{ url_for('index') }}">Mosaic</a></li>
+        <li><a href="{{ url_for('homemade_painting') }}">Homemade Painting</a></li>
+        <li><a href="{{ url_for('collection') }}">Collection</a></li>
+      </ul>
+    </nav>
+  </header>
+  
+  <main>
+    <div id="main-content">
+      <!-- Colonne de gauche : visualisation -->
+      <div id="mosaic-column">
+        <div id="mosaic-container">
+          <div id="loader" style="display: none;">
+            <div class="main">
+              <div class="up">
+                <div class="loaders">
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                  <div class="loader"></div>
+                </div>
+                <div class="loadersB">
+                  <div class="loaderA"><div class="ball0"></div></div>
+                  <div class="loaderA"><div class="ball1"></div></div>
+                  <div class="loaderA"><div class="ball2"></div></div>
+                  <div class="loaderA"><div class="ball3"></div></div>
+                  <div class="loaderA"><div class="ball4"></div></div>
+                  <div class="loaderA"><div class="ball5"></div></div>
+                  <div class="loaderA"><div class="ball6"></div></div>
+                  <div class="loaderA"><div class="ball7"></div></div>
+                  <div class="loaderA"><div class="ball8"></div></div>
+                </div>
+              </div>
+            </div>
+            <div id="logMessages"></div>
+          </div>
+          <div id="mosaic-wrapper">
+            <img id="paintingImage" src="" alt="Painting generated">
+          </div>
+          <div id="mosaicResolution"></div>
+        </div>
+      </div>
+      <!-- Colonne de droite : réglages -->
+      <div id="settings-column">
+        <form id="paintingForm">
+          <div class="form-group">
+            <label for="painting_image">Image à peindre :</label>
+            <input type="file" id="painting_image" name="painting_image" accept="image/*" required>
+          </div>
+          <div class="form-group">
+            <label for="num_colors">Nombre de couleurs (3 à 15) : <span id="num_colors_value">6</span></label>
+            <input type="range" id="num_colors" name="num_colors" min="3" max="15" value="6" step="1">
+          </div>
+          <!-- Zone pour afficher et modifier la palette -->
+          <div class="form-group" id="paletteContainer"></div>
+          <!-- Bouton pour générer une nouvelle charte -->
+          <button type="button" id="regen_palette">Nouvelle charte</button>
+          <!-- Nouveau conteneur pour la prévisualisation BW, de petite taille -->
+          <div id="bwPreviewContainerSmall" style="margin-top:1em;">
+            <h3>Contours (BW)</h3>
+            <img id="bwPreviewSmall" src="" alt="Prévisualisation BW" style="width:200px; border:1px solid #ccc;">
+          </div>
+        </form>
+      </div>
+    </div>
+  </main>
+  
+  <footer>
+    <p>&copy; The Mozark</p>
+  </footer>
+  
+  <script src="{{ url_for('static', filename='js/painting.js') }}"></script>
+</body>
+</html>
